@@ -1,0 +1,364 @@
+@import url("https://cdn.jsdelivr.net/gh/mvoloskov/potion/potion.min.css");
+
+* {
+    padding-bottom: 0px;
+    margin-bottom: 0px;
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: "Google Sans", Roboto, Arial, sans-serif;
+    user-select: none; /* Prevent text selection during drag operations */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+/* When actively selecting anywhere in the document, show crosshair cursor */
+body.selecting {
+    cursor: crosshair !important;
+}
+
+body.selecting * {
+    cursor: crosshair !important;
+}
+
+#root {
+    width: 100vw;
+    min-height: 100vh;
+}
+
+.app {
+    width: 100%;
+    min-height: 100vh;
+    position: relative;
+}
+
+.top-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    padding: 8px 12px 8px 8px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.top-bar button {
+    font-size: 1.1em;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.top-bar button:hover {
+    background: #f5f5f5;
+    border-color: #ccc;
+}
+
+.hidden-input {
+    display: none;
+}
+
+/* Canister-specific styles */
+.canisters-container {
+    margin-top: 60px;
+    width: 100%;
+    min-height: calc(100vh - 60px);
+    padding: 20px;
+    cursor: default; /* Show that you can click and drag here */
+}
+
+/* When actively selecting, show crosshair cursor */
+.canisters-container.selecting {
+    cursor: crosshair;
+}
+
+.canister {
+    width: 100%;
+    min-height: 40px;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.canister.display {
+    cursor: pointer;
+    border: 1px solid transparent;
+    line-height: 1.6;
+    font-size: 16px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.canister.display:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+    border-color: rgba(0, 0, 0, 0.1);
+}
+
+.canister.editing {
+    border-color: #007acc;
+    background-color: rgba(0, 122, 204, 0.05);
+    box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
+}
+
+/* Multiple canisters editing at once */
+.canister.editing.multi-select {
+    border-color: #28a745;
+    background-color: rgba(40, 167, 69, 0.05);
+    box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.2);
+}
+
+/* Hide selected canisters when multi-line editor is active */
+.canisters-container:has(.multi-line-editor.inline) .canister.selected {
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+.canister-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 16px;
+    font-family: inherit;
+    line-height: 1.6;
+    padding: 0;
+    resize: none;
+}
+
+/* Empty canister styling */
+.canister.display:empty {
+    min-height: 24px; /* Ensure empty canisters have some height */
+    border: 1px dashed transparent;
+}
+
+.canister.display:empty:hover {
+    border-color: rgba(0, 0, 0, 0.1);
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Only show placeholder text for the single canister case - handled in JS now */
+
+/* Canister markdown styling */
+.canister h1,
+.canister h2,
+.canister h3,
+.canister h4,
+.canister h5,
+.canister h6 {
+    margin: 0;
+    padding: 0;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.canister h1 {
+    font-size: 2em;
+}
+.canister h2 {
+    font-size: 1.5em;
+}
+.canister h3 {
+    font-size: 1.25em;
+}
+.canister h4 {
+    font-size: 1.1em;
+}
+.canister h5 {
+    font-size: 1em;
+}
+.canister h6 {
+    font-size: 0.9em;
+}
+
+.canister li {
+    margin: 0;
+    padding: 0;
+    list-style-position: inside;
+}
+
+.canister blockquote {
+    margin: 0;
+    padding-left: 16px;
+    border-left: 4px solid #ddd;
+    color: #666;
+    font-style: italic;
+}
+
+.canister code {
+    background: #f4f4f4;
+    border-radius: 3px;
+    padding: 0.2em 0.4em;
+    font-size: 0.9em;
+    font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+}
+
+.canister hr {
+    border: none;
+    border-top: 2px solid #eee;
+    margin: 0;
+}
+
+.canister table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0;
+}
+
+.canister th,
+.canister td {
+    border: 1px solid #ddd;
+    padding: 0.5em 1em;
+    text-align: left;
+}
+
+.canister th {
+    background: #f4f4f4;
+    font-weight: 600;
+}
+
+.canister mark {
+    background-color: #ffeb3b;
+    padding: 0.1em 0.2em;
+    border-radius: 2px;
+}
+
+.canister .placeholder-text {
+    color: #999;
+    font-style: italic;
+}
+
+/* Remove old note editor and display styles since we're using canisters now */
+.note-editor,
+.note-display {
+    display: none;
+}
+
+/* Multi-selection styling */
+.canister.selected {
+    background-color: rgba(40, 167, 69, 0.1);
+    border-color: rgba(40, 167, 69, 0.3);
+}
+
+.canister.selecting {
+    background-color: rgba(0, 122, 204, 0.1);
+    border-color: rgba(0, 122, 204, 0.3);
+}
+
+/* User select for drag selection */
+.canisters-container {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+/* Multi-line editor styles */
+.multi-line-editor.inline {
+    background: white;
+    border: 2px solid #007acc;
+    border-radius: 8px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.multi-line-editor {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    width: 90%;
+    max-width: 800px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.multi-line-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #eee;
+    background: #f8f9fa;
+    border-radius: 8px 8px 0 0;
+}
+
+.multi-line-header span {
+    font-weight: 600;
+    color: #333;
+}
+
+.multi-line-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.multi-line-actions button {
+    padding: 6px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.multi-line-actions button:hover {
+    background: #f5f5f5;
+}
+
+.multi-line-actions button:first-child {
+    background: #28a745;
+    color: white;
+    border-color: #28a745;
+}
+
+.multi-line-actions button:first-child:hover {
+    background: #218838;
+}
+
+.multi-line-textarea {
+    width: 100%;
+    min-height: 300px;
+    padding: 20px;
+    border: none;
+    outline: none;
+    font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    resize: vertical;
+    flex: 1;
+    cursor: text;
+}
+
+.multi-line-footer {
+    padding: 12px 20px;
+    border-top: 1px solid #eee;
+    background: #f8f9fa;
+    border-radius: 0 0 8px 8px;
+    text-align: center;
+}
+
+.multi-line-footer kbd {
+    background: #e9ecef;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 12px;
+    border: 1px solid #ced4da;
+}

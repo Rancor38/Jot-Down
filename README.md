@@ -1,16 +1,17 @@
 # Jot-Down Note-Taking App
 
-A simple, collaborative note-taking web application inspired by Notion. This app allows you to edit, save, and view notes in Markdown, with real-time updates and basic highlighting features.
+A simple, modern note-taking React application inspired by Notion. This app allows you to edit, save, and view notes in Markdown, with local storage persistence and beautiful highlighting features.
 
 ## Features
 
 -   **Markdown Support:** Write notes in Markdown, rendered using the `marked` library.
 -   **Highlighting:** Use `==highlight==` syntax to highlight text.
--   **Live Editing:** Double-click to edit notes. Changes are saved automatically.
--   **WebSocket Live Refresh:** Notes update in real-time across all connected clients.
+-   **Live Editing:** Double-click to edit notes. Changes are saved automatically to localStorage.
+-   **Local Storage:** Notes persist in your browser's local storage.
 -   **Placeholder Text:** When notes are empty, a placeholder prompts you to start typing.
 -   **Undo/Redo:** Use `Cmd+Z`/`Cmd+Shift+Z` for undo/redo while editing.
 -   **Tab Support:** Press Tab to insert spaces while editing.
+-   **File Operations:** Open and create new markdown files.
 
 ## Usage
 
@@ -18,20 +19,34 @@ A simple, collaborative note-taking web application inspired by Notion. This app
     ```sh
     npm install
     ```
-2. **Start the server:**
+2. **Start the development server:**
     ```sh
-    node server.js
+    npm run dev
     ```
 3. **Open your browser:**
    Go to [http://localhost:3000](http://localhost:3000)
 
 ## File Structure
 
--   `server.js` - Express server with WebSocket support and Markdown rendering
--   `notes.md` - The main note file (Markdown)
--   `public/index.html` - Main HTML page
--   `public/static/script.js` - Frontend logic for editing, saving, and live updates
--   `public/static/styles.css` - App styling
+-   `src/App.jsx` - Main React component with all note-taking functionality
+-   `src/main.jsx` - React app entry point
+-   `src/index.css` - App styling and Markdown CSS
+-   `index.html` - Main HTML template
+-   `vite.config.js` - Vite build configuration
+
+## Build
+
+To build for production:
+
+```sh
+npm run build
+```
+
+To preview the built app:
+
+```sh
+npm run preview
+```
 
 ## Editing Notes
 
@@ -40,6 +55,21 @@ A simple, collaborative note-taking web application inspired by Notion. This app
 -   **Tab** inserts spaces.
 -   **Cmd+Z / Cmd+Shift+Z** for undo/redo.
 -   **Click "Hard Save & Format"** to save and re-render Markdown.
+-   **Click outside** the editing area to auto-save.
+
+## Data Persistence
+
+Notes are automatically saved to your browser's localStorage, so your work persists between sessions. You can also:
+
+-   **Open** markdown files from your computer
+-   **Create** new notes that will be saved locally
+
+## Technology Stack
+
+-   **React 18** - Modern React with hooks
+-   **Vite** - Fast build tool and development server
+-   **Marked** - Markdown parsing and rendering
+-   **Local Storage** - Client-side data persistence
 
 ## Highlighting
 
@@ -48,7 +78,7 @@ Wrap text with `==` to highlight:
 
 ## Placeholder
 
-If `notes.md` is empty, a placeholder message appears:  
+If your notes are empty, a placeholder message appears:  
 _"double-click to type something here"_
 
 ## License
