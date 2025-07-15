@@ -1,115 +1,51 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 
-// Multi-Line Editor Component for editing multiple selected canisters
-function MultiLineEditor({
-  canisters,
-  selectedIds,
-  onSave,
-  onCancel
-}) {
-  const selectedCanisters = canisters.filter(c => selectedIds.has(c.id))
-  const combinedContent = selectedCanisters.map(c => c.content).join('\n')
-  const [editContent, setEditContent] = useState(combinedContent)
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 })
-  const textareaRef = useRef(null)
-  const editorRef = useRef(null)
+// Helper function to process markdown content for display
+const processLineMarkdown = (content) => {
+  if (!content) return ''
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.focus()
-      textareaRef.current.setSelectionRange(editContent.length, editContent.length)
-    }
-  }, [])
+  let processed = content
 
-  // Calculate position based on selected canisters
-  useEffect(() => {
-    const calculatePosition = () => {
-      const selectedCanisterElements = Array.from(selectedIds).map(id =>
-        document.querySelector(`[data-canister-id="${id}"]`)
-      ).filter(Boolean)
+  // Bold **text**
+  processed = processed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
 
-      if (selectedCanisterElements.length > 0) {
-        const firstElement = selectedCanisterElements[0]
-        const lastElement = selectedCanisterElements[selectedCanisterElements.length - 1]
+  // Italic *text*
+  processed = processed.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
 
-        const firstRect = firstElement.getBoundingClientRect()
-        const lastRect = lastElement.getBoundingClientRect()
+  // Underline <u>text</u> (HTML)
+  processed = processed.replace(/<u>(.*?)<\/u>/g, '<u>$1</u>')
 
-        const containerRect = document.querySelector('.canisters-container').getBoundingClientRect()
+  // Strikethrough ~~text~~
+  processed = processed.replace(/~~(.*?)~~/g, '<del>$1</del>')
 
-        setPosition({
-          top: firstRect.top - containerRect.top + window.scrollY,
-          left: firstRect.left - containerRect.left,
-          width: Math.max(firstRect.width, 600), // Minimum width of 600px
-          height: Math.max(200, (lastRect.bottom - firstRect.top) + 100) // Dynamic height based on selection
-        })
-      }
-    }
+  // Highlight ==text==
+  processed = processed.replace(/==(.*?)==/g, '<mark>$1</mark>')
 
-    calculatePosition()
+  // Inline code `text`
+  processed = processed.replace(/`(.*?)`/g, '<code>$1</code>')
 
-    // Recalculate on window resize
-    window.addEventListener('resize', calculatePosition)
-    window.addEventListener('scroll', calculatePosition)
+  // Headers (# ## ### etc.)
+  processed = processed.replace(/^(#{1,6})\s+(.*)$/g, (match, hashes, text) => {
+    const level = hashes.length
+    return `<h${level}>${text}</h${level}>`
+  })
 
-    return () => {
-      window.removeEventListener('resize', calculatePosition)
-      window.removeEventListener('scroll', calculatePosition)
-    }
-  }, [selectedIds])
+  // Blockquote > text
+  processed = processed.replace(/^>\s+(.*)$/g, '<blockquote>$1</blockquote>')
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      onCancel()
-    } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      e.preventDefault()
-      handleSave()
-    }
-  }
+  // List items - text
+  processed = processed.replace(/^-\s+(.*)$/g, '<ul><li>$1</li></ul>')
 
-  const handleSave = () => {
-    const newLines = editContent.split('\n')
-    onSave(selectedCanisters, newLines)
-  }
+  // Links [text](url)
+  processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
 
-  return (
-    <div
-      ref={editorRef}
-      className="multi-line-editor inline"
-      style={{
-        position: 'absolute',
-        top: position.top,
-        left: position.left,
-        width: position.width,
-        minHeight: position.height,
-        zIndex: 1000
-      }}
-    >
-      <div className="multi-line-header">
-        <span>✏️ Editing {selectedCanisters.length} lines together</span>
-        <div className="multi-line-actions">
-          <button onClick={handleSave} title="Save (Cmd+Enter)">✓ Save</button>
-          <button onClick={onCancel} title="Cancel (Esc)">✗ Cancel</button>
-        </div>
-      </div>
-      <textarea
-        ref={textareaRef}
-        value={editContent}
-        onChange={(e) => setEditContent(e.target.value)}
-        onKeyDown={handleKeyDown}
-        className="multi-line-textarea"
-        placeholder="Edit multiple lines here... Each line will become a separate container when saved."
-        rows={Math.max(5, selectedCanisters.length + 2)}
-        style={{ minHeight: position.height - 80 }} // Account for header height
-      />
-      <div className="multi-line-footer">
-        <small>
-          💡 <strong>Tip:</strong> Each line becomes a separate container. Press <kbd>Cmd+Enter</kbd> to save, <kbd>Esc</kbd> to cancel without changes.
-        </small>
-      </div>
-    </div>
-  )
+  // Horizontal rule ---
+  processed = processed.replace(/^---$/g, '<hr>')
+
+  // Center div (already HTML)
+  // No processing needed as it's already HTML
+
+  return processed
 }
 
 // Individual Canister Component
@@ -119,6 +55,8 @@ function Canister({
   isSelected,
   isDragSelecting,
   isSelecting,
+  isDragging,
+  dragOverPosition,
   onEdit,
   onSave,
   onCreateNew,
@@ -126,14 +64,24 @@ function Canister({
   onStopEditing,
   onNavigateToPrevious,
   onNavigateToNext,
-  totalCanisters,
   onMouseDown,
   onMouseEnter,
-  onDoubleClick
+  onDoubleClick,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragEnter,
+  onDragLeave,
+  onDrop,
+  totalCanisters
 }) {
   const [editContent, setEditContent] = useState(canister.content)
-  const inputRef = useRef(null)
   const canisterRef = useRef(null)
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    setEditContent(canister.content)
+  }, [canister.content])
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -142,75 +90,263 @@ function Canister({
     }
   }, [isEditing])
 
-  useEffect(() => {
-    if (isEditing) {
-      setEditContent(canister.content)
-    }
-  }, [isEditing, canister.content])
-
-  // Process markdown with highlighting for display
-  const processLineMarkdown = (content) => {
-    // Only show placeholder for empty content if there's more than one canister
-    if ((!content || content.trim().length === 0) && totalCanisters > 1) {
-      return '' // Return empty string instead of placeholder for multiple canisters
-    } else if ((!content || content.trim().length === 0) && totalCanisters === 1) {
-      return '<span class="placeholder-text">click to type something here</span>'
-    }
-
-    // Handle highlighting syntax
-    const regex = /==/g
-    let count = 0
-    let processedContent = content.replace(regex, () => {
-      count++
-      return count % 2 === 1 ? '<mark>' : '</mark>'
-    })
-
-    // Convert basic markdown without creating block elements
-    processedContent = processedContent
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/`(.*?)`/g, '<code>$1</code>')
-      .replace(/^# (.*)/g, '<h1>$1</h1>')
-      .replace(/^## (.*)/g, '<h2>$1</h2>')
-      .replace(/^### (.*)/g, '<h3>$1</h3>')
-      .replace(/^#### (.*)/g, '<h4>$1</h4>')
-      .replace(/^##### (.*)/g, '<h5>$1</h5>')
-      .replace(/^###### (.*)/g, '<h6>$1</h6>')
-      .replace(/^- (.*)/g, '<li>$1</li>')
-      .replace(/^\* (.*)/g, '<li>$1</li>')
-      .replace(/^\+ (.*)/g, '<li>$1</li>')
-      .replace(/^\d+\. (.*)/g, '<li>$1</li>')
-      .replace(/^> (.*)/g, '<blockquote>$1</blockquote>')
-      .replace(/^---$/g, '<hr>')
-
-    return processedContent
-  }
-
   const handleClick = (e) => {
-    // Only handle single click to edit if we're not in a drag selection and no modifiers
-    if (!isSelecting && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-      e.preventDefault()
-      e.stopPropagation()
-      onEdit(canister.id)
+    // Don't handle click if this is part of a drag selection or if modifier keys are pressed
+    // Also check if we just finished a drag operation
+    if (isSelecting || isDragging || e.shiftKey || e.metaKey || e.ctrlKey) {
+      return
     }
+
+    // Normal click to edit
+    onEdit(canister.id)
   }
 
   const handleDoubleClick = (e) => {
     e.preventDefault()
-    onDoubleClick(canister.id)
+    e.stopPropagation()
+    // Don't allow double-click during drag operations
+    if (!isDragging) {
+      onDoubleClick(canister.id)
+    }
   }
 
   const handleMouseDown = (e) => {
-    onMouseDown(canister.id, e)
+    // Only handle mouse down if not in the middle of a drag operation
+    if (!isDragging) {
+      onMouseDown(canister.id, e)
+    }
   }
 
   const handleMouseEnter = (e) => {
     onMouseEnter(canister.id, e)
   }
 
+  // Helper function to apply markdown formatting to selected text
+  const applyMarkdownFormatting = (wrapper, isBlock = false, prefix = '', suffix = '') => {
+    const input = inputRef.current
+    if (!input) return
+
+    const start = input.selectionStart
+    const end = input.selectionEnd
+    const selectedText = editContent.substring(start, end)
+
+    let newContent
+    let newCursorPos
+
+    if (isBlock) {
+      // For block elements like center div
+      if (selectedText) {
+        newContent = editContent.substring(0, start) + prefix + selectedText + suffix + editContent.substring(end)
+        newCursorPos = start + prefix.length + selectedText.length + suffix.length
+      } else {
+        const placeholderText = 'text'
+        newContent = editContent.substring(0, start) + prefix + placeholderText + suffix + editContent.substring(end)
+        newCursorPos = start + prefix.length + placeholderText.length
+      }
+    } else {
+      // For inline elements like bold, italic, etc.
+      if (selectedText) {
+        newContent = editContent.substring(0, start) + wrapper + selectedText + wrapper + editContent.substring(end)
+        newCursorPos = start + wrapper.length + selectedText.length + wrapper.length
+      } else {
+        newContent = editContent.substring(0, start) + wrapper + wrapper + editContent.substring(end)
+        newCursorPos = start + wrapper.length
+      }
+    }
+
+    setEditContent(newContent)
+
+    setTimeout(() => {
+      input.focus()
+      if (selectedText || isBlock) {
+        input.setSelectionRange(newCursorPos, newCursorPos)
+      } else {
+        input.setSelectionRange(newCursorPos, newCursorPos)
+      }
+    }, 0)
+  }
+
   const handleKeyDown = (e) => {
     const cursorPosition = e.target.selectionStart
     const textLength = editContent.length
+
+    // Handle Cmd+A for text selection within the input
+    if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
+      const input = inputRef.current
+      if (input) {
+        const currentSelection = input.selectionEnd - input.selectionStart
+        const isAllTextSelected = currentSelection === editContent.length
+
+        if (isAllTextSelected && editContent.length > 0) {
+          // If all text is already selected, prevent default and let parent handle container selection
+          e.preventDefault()
+          e.stopPropagation()
+          // Signal to parent that we want to select all containers
+          onSave(canister.id, editContent)
+          // Trigger container selection by dispatching a custom event
+          window.dispatchEvent(new CustomEvent('selectAllContainers'))
+          return
+        } else {
+          // Normal text selection behavior - select all text in this input
+          e.preventDefault()
+          input.setSelectionRange(0, editContent.length)
+          return
+        }
+      }
+    }
+
+    // Handle markdown formatting hotkeys
+    if (e.metaKey || e.ctrlKey) {
+      switch (e.key.toLowerCase()) {
+        case 'b':
+          e.preventDefault()
+          applyMarkdownFormatting('**')
+          return
+        case 'i':
+          e.preventDefault()
+          applyMarkdownFormatting('*')
+          return
+        case 'u':
+          e.preventDefault()
+          applyMarkdownFormatting('<u>', false, '<u>', '</u>')
+          return
+        case '`':
+        case 'e': // Alternative for backtick
+          e.preventDefault()
+          applyMarkdownFormatting('`')
+          return
+        case 'h':
+          e.preventDefault()
+          applyMarkdownFormatting('==')
+          return
+        case 'k':
+          e.preventDefault()
+          // Link formatting
+          const input = inputRef.current
+          const start = input.selectionStart
+          const end = input.selectionEnd
+          const selectedText = editContent.substring(start, end)
+
+          if (selectedText) {
+            const newContent = editContent.substring(0, start) + `[${selectedText}](url)` + editContent.substring(end)
+            setEditContent(newContent)
+            setTimeout(() => {
+              input.focus()
+              const urlStart = start + selectedText.length + 3
+              const urlEnd = urlStart + 3
+              input.setSelectionRange(urlStart, urlEnd)
+            }, 0)
+          } else {
+            const newContent = editContent.substring(0, start) + '[text](url)' + editContent.substring(end)
+            setEditContent(newContent)
+            setTimeout(() => {
+              input.focus()
+              input.setSelectionRange(start + 1, start + 5) // Select 'text'
+            }, 0)
+          }
+          return
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+          e.preventDefault()
+          const level = e.key
+          const hashes = '#'.repeat(parseInt(level))
+          const input1 = inputRef.current
+          const start1 = input1.selectionStart
+          const end1 = input1.selectionEnd
+          const selectedText1 = editContent.substring(start1, end1)
+
+          if (selectedText1) {
+            const newContent = editContent.substring(0, start1) + `${hashes} ${selectedText1}` + editContent.substring(end1)
+            setEditContent(newContent)
+            setTimeout(() => {
+              input1.focus()
+              input1.setSelectionRange(start1 + hashes.length + 1 + selectedText1.length, start1 + hashes.length + 1 + selectedText1.length)
+            }, 0)
+          } else {
+            const newContent = editContent.substring(0, start1) + `${hashes} ` + editContent.substring(end1)
+            setEditContent(newContent)
+            setTimeout(() => {
+              input1.focus()
+              input1.setSelectionRange(start1 + hashes.length + 1, start1 + hashes.length + 1)
+            }, 0)
+          }
+          return
+        case 'l':
+          e.preventDefault()
+          // List item
+          const input2 = inputRef.current
+          const start2 = input2.selectionStart
+          const end2 = input2.selectionEnd
+          const selectedText2 = editContent.substring(start2, end2)
+
+          if (selectedText2) {
+            const newContent = editContent.substring(0, start2) + `- ${selectedText2}` + editContent.substring(end2)
+            setEditContent(newContent)
+            setTimeout(() => {
+              input2.focus()
+              input2.setSelectionRange(start2 + 2 + selectedText2.length, start2 + 2 + selectedText2.length)
+            }, 0)
+          } else {
+            const newContent = editContent.substring(0, start2) + '- ' + editContent.substring(end2)
+            setEditContent(newContent)
+            setTimeout(() => {
+              input2.focus()
+              input2.setSelectionRange(start2 + 2, start2 + 2)
+            }, 0)
+          }
+          return
+        case 'q':
+          e.preventDefault()
+          // Blockquote
+          const input3 = inputRef.current
+          const start3 = input3.selectionStart
+          const end3 = input3.selectionEnd
+          const selectedText3 = editContent.substring(start3, end3)
+
+          if (selectedText3) {
+            const newContent = editContent.substring(0, start3) + `> ${selectedText3}` + editContent.substring(end3)
+            setEditContent(newContent)
+            setTimeout(() => {
+              input3.focus()
+              input3.setSelectionRange(start3 + 2 + selectedText3.length, start3 + 2 + selectedText3.length)
+            }, 0)
+          } else {
+            const newContent = editContent.substring(0, start3) + '> ' + editContent.substring(end3)
+            setEditContent(newContent)
+            setTimeout(() => {
+              input3.focus()
+              input3.setSelectionRange(start3 + 2, start3 + 2)
+            }, 0)
+          }
+          return
+        case 'm':
+          e.preventDefault()
+          // Center text with HTML
+          applyMarkdownFormatting('', true, '<div align="center">', '</div>')
+          return
+        case 'd':
+          e.preventDefault()
+          // Strikethrough
+          applyMarkdownFormatting('~~')
+          return
+        case 'r':
+          e.preventDefault()
+          // Horizontal rule
+          const input4 = inputRef.current
+          const start4 = input4.selectionStart
+          const newContent4 = editContent.substring(0, start4) + '---' + editContent.substring(start4)
+          setEditContent(newContent4)
+          setTimeout(() => {
+            input4.focus()
+            input4.setSelectionRange(start4 + 3, start4 + 3)
+          }, 0)
+          return
+      }
+    }
 
     if (e.key === 'Enter') {
       e.preventDefault()
@@ -221,13 +357,13 @@ function Canister({
       onStopEditing()
     } else if (e.key === 'Tab') {
       e.preventDefault()
-      const start = e.target.selectionStart
-      const end = e.target.selectionEnd
-      const newContent = editContent.substring(0, start) + '    ' + editContent.substring(end)
+      const tabStart = e.target.selectionStart
+      const tabEnd = e.target.selectionEnd
+      const newContent = editContent.substring(0, tabStart) + '    ' + editContent.substring(tabEnd)
       setEditContent(newContent)
 
       setTimeout(() => {
-        e.target.selectionStart = e.target.selectionEnd = start + 4
+        e.target.selectionStart = e.target.selectionEnd = tabStart + 4
       }, 0)
     } else if ((e.key === 'Backspace' || e.key === 'Delete') && editContent === '') {
       e.preventDefault()
@@ -283,14 +419,293 @@ function Canister({
   return (
     <div
       ref={canisterRef}
-      className={`canister display ${isSelected ? 'selected' : ''} ${isDragSelecting ? 'selecting' : ''}`}
+      className={`canister display ${isSelected ? 'selected' : ''} ${isDragSelecting ? 'selecting' : ''} ${isDragging ? 'dragging' : ''} ${dragOverPosition ? `drag-over-${dragOverPosition}` : ''}`}
       data-canister-id={canister.id}
+      draggable={!isEditing && !isSelecting && !isDragSelecting}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       onMouseDown={handleMouseDown}
       onMouseEnter={handleMouseEnter}
-      dangerouslySetInnerHTML={{ __html: processLineMarkdown(canister.content) }}
-    />
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {canister.content === '' && totalCanisters === 1 ? (
+        <span style={{ color: '#999', fontStyle: 'italic' }}>
+          Type your markdown here...
+        </span>
+      ) : (
+        <div dangerouslySetInnerHTML={{ __html: processLineMarkdown(canister.content) }} />
+      )}
+    </div>
+  )
+}
+
+// Multi-Line Editor Component for editing multiple selected canisters
+function MultiLineEditor({
+  canisters,
+  selectedIds,
+  onSave,
+  onCancel,
+  onDelete
+}) {
+  const selectedCanisters = canisters.filter(c => selectedIds.has(c.id))
+  const combinedContent = selectedCanisters.map(c => c.content).join('\n')
+  const [editContent, setEditContent] = useState(combinedContent)
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 })
+  const textareaRef = useRef(null)
+  const editorRef = useRef(null)
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.focus()
+      textareaRef.current.setSelectionRange(editContent.length, editContent.length)
+    }
+  }, [])
+
+  // Calculate position based on selected canisters
+  useEffect(() => {
+    const calculatePosition = () => {
+      const selectedCanisterElements = Array.from(selectedIds).map(id =>
+        document.querySelector(`[data-canister-id="${id}"]`)
+      ).filter(Boolean)
+
+      if (selectedCanisterElements.length > 0) {
+        const firstElement = selectedCanisterElements[0]
+        const lastElement = selectedCanisterElements[selectedCanisterElements.length - 1]
+
+        const firstRect = firstElement.getBoundingClientRect()
+        const lastRect = lastElement.getBoundingClientRect()
+
+        const containerRect = document.querySelector('.canisters-container').getBoundingClientRect()
+
+        setPosition({
+          top: firstRect.top - containerRect.top + window.scrollY,
+          left: firstRect.left - containerRect.left,
+          width: Math.max(firstRect.width, 600), // Minimum width of 600px
+          height: Math.max(200, (lastRect.bottom - firstRect.top) + 100) // Dynamic height based on selection
+        })
+      }
+    }
+
+    calculatePosition()
+
+    // Recalculate on window resize
+    window.addEventListener('resize', calculatePosition)
+    window.addEventListener('scroll', calculatePosition)
+
+    return () => {
+      window.removeEventListener('resize', calculatePosition)
+      window.removeEventListener('scroll', calculatePosition)
+    }
+  }, [selectedIds])
+
+  // Helper function to apply markdown formatting to selected text in textarea
+  const applyMarkdownFormattingMultiLine = (wrapper, isBlock = false, prefix = '', suffix = '') => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const selectedText = editContent.substring(start, end)
+
+    let newContent
+    let newCursorPos
+
+    if (isBlock) {
+      // For block elements like center div
+      if (selectedText) {
+        newContent = editContent.substring(0, start) + prefix + selectedText + suffix + editContent.substring(end)
+        newCursorPos = start + prefix.length + selectedText.length + suffix.length
+      } else {
+        const placeholderText = 'text'
+        newContent = editContent.substring(0, start) + prefix + placeholderText + suffix + editContent.substring(end)
+        newCursorPos = start + prefix.length + placeholderText.length
+      }
+    } else {
+      // For inline elements like bold, italic, etc.
+      if (selectedText) {
+        newContent = editContent.substring(0, start) + wrapper + selectedText + wrapper + editContent.substring(end)
+        newCursorPos = start + wrapper.length + selectedText.length + wrapper.length
+      } else {
+        newContent = editContent.substring(0, start) + wrapper + wrapper + editContent.substring(end)
+        newCursorPos = start + wrapper.length
+      }
+    }
+
+    setEditContent(newContent)
+
+    setTimeout(() => {
+      textarea.focus()
+      if (selectedText || isBlock) {
+        textarea.setSelectionRange(newCursorPos, newCursorPos)
+      } else {
+        textarea.setSelectionRange(newCursorPos, newCursorPos)
+      }
+    }, 0)
+  }
+
+  const handleKeyDownMultiLine = (e) => {
+    // Handle markdown formatting hotkeys
+    if (e.metaKey || e.ctrlKey) {
+      switch (e.key.toLowerCase()) {
+        case 'b':
+          e.preventDefault()
+          applyMarkdownFormattingMultiLine('**')
+          return
+        case 'i':
+          e.preventDefault()
+          applyMarkdownFormattingMultiLine('*')
+          return
+        case 'u':
+          e.preventDefault()
+          applyMarkdownFormattingMultiLine('<u>', false, '<u>', '</u>')
+          return
+        case '`':
+        case 'e': // Alternative for backtick
+          e.preventDefault()
+          applyMarkdownFormattingMultiLine('`')
+          return
+        case 'h':
+          e.preventDefault()
+          applyMarkdownFormattingMultiLine('==')
+          return
+        case 'd':
+          e.preventDefault()
+          applyMarkdownFormattingMultiLine('~~')
+          return
+        case 'm':
+          e.preventDefault()
+          applyMarkdownFormattingMultiLine('', true, '<div align="center">', '</div>')
+          return
+        case 'delete':
+        case 'backspace':
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault()
+            handleDelete()
+            return
+          }
+          break
+      }
+    }
+
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      onCancel()
+    } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault()
+      handleSave()
+    }
+  }
+
+  const handleSave = () => {
+    const newLines = editContent.split('\n')
+    onSave(selectedCanisters, newLines)
+  }
+
+  const handleDelete = () => {
+    onDelete(selectedCanisters)
+  }
+
+  // Handle click outside to save
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (editorRef.current && !editorRef.current.contains(event.target)) {
+        handleSave()
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [editContent]) // Include editContent in dependencies to capture current state
+
+  return (
+    <div
+      ref={editorRef}
+      className="multi-line-editor"
+      style={{
+        position: 'absolute',
+        top: position.top,
+        left: position.left,
+        width: position.width,
+        height: position.height,
+        zIndex: 1000,
+        backgroundColor: 'white',
+        border: '2px solid #007acc',
+        borderRadius: '8px',
+        padding: '16px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+      }}
+    >
+      <div style={{ marginBottom: '8px', fontSize: '14px', color: '#666' }}>
+        Editing {selectedCanisters.length} lines
+      </div>
+      <textarea
+        ref={textareaRef}
+        value={editContent}
+        onChange={(e) => setEditContent(e.target.value)}
+        onKeyDown={handleKeyDownMultiLine}
+        style={{
+          width: '100%',
+          height: 'calc(100% - 60px)',
+          border: '1px solid #ddd',
+          borderRadius: '4px',
+          padding: '8px',
+          fontSize: '14px',
+          fontFamily: 'inherit',
+          resize: 'none',
+          outline: 'none',
+          cursor: 'text'
+        }}
+        placeholder="Edit multiple lines..."
+      />
+      <div style={{ marginTop: '8px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        <button
+          onClick={handleSave}
+          style={{
+            padding: '6px 12px',
+            backgroundColor: '#007acc',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Save (Cmd+Enter)
+        </button>
+        <button
+          onClick={handleDelete}
+          style={{
+            padding: '6px 12px',
+            backgroundColor: '#dc3545',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Delete
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            padding: '6px 12px',
+            backgroundColor: '#6c757d',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Cancel (Esc)
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -305,88 +720,36 @@ function App() {
   const [isSelecting, setIsSelecting] = useState(false)
   const [dragSelectionIds, setDragSelectionIds] = useState(new Set())
   const [selectionStart, setSelectionStart] = useState(null)
+  const [draggedCanisterId, setDraggedCanisterId] = useState(null)
+  const [dragOverCanisterId, setDragOverCanisterId] = useState(null)
+  const [dragOverPosition, setDragOverPosition] = useState(null) // 'top' or 'bottom'
+  const [showTooltips, setShowTooltips] = useState(false)
   const containerRef = useRef(null)
   const lastScrollY = useRef(0)
   const undoStack = useRef([])
   const redoStack = useRef([])
 
-  // Load initial content from localStorage or use default
+  // Load initial content from localStorage or create empty canister
   useEffect(() => {
     const savedContent = localStorage.getItem('jot-down-content')
-    let initialContent = ''
 
-    if (savedContent) {
-      initialContent = savedContent
+    if (savedContent && savedContent.trim() !== '') {
+      // Convert content to canisters (split by lines)
+      const lines = savedContent.split('\n')
+      const initialCanisters = lines.map((line, index) => ({
+        id: `canister-${index}`,
+        content: line,
+        isEditing: false
+      }))
+      setCanisters(initialCanisters)
     } else {
-      initialContent = `# Panel Area Calculation for Wall Coverage
-
-All measurements are in **inches**.
-
----
-
-## 🔹 Wall Dimensions and Areas
-
-### ✅ Towel Wall
-
--   34 × 15 = **510 in²**
--   66 × 82 = **5,412 in²**  
-    **Subtotal: 5,922 in²**
-
----
-
-### ✅ Shower Wall
-
--   36 × 15 = **540 in²**
-
----
-
-### ✅ Mirror Wall
-
--   28 × 82 = **2,296 in²**
--   34 × 15 = **510 in²**
--   6 × 51 = **306 in²**
--   36 × 15 = **540 in²**  
-    **Subtotal: 3,652 in²**
-
----
-
-### ✅ Door Wall
-
--   35 × 4 = **140 in²**
--   24 × 51 = **1,224 in²**
--   4 × 82 = **328 in²**  
-    **Subtotal: 1,692 in²**
-
----
-
-## 🔹 Total Area Required
-
-| Wall        | Area (in²) |
-| ----------- | ---------- |
-| Towel Wall  | 5,922      |
-| Shower Wall | 540        |
-| Mirror Wall | 3,652      |
-| Door Wall   | 1,692      |
-| **Total**   | **11,806** |
-
----
-
-## 📝 Notes
-
-This is a ==highlighted== section to show the highlighting feature.
-
-Click any line to edit that specific content!`
+      // Create a single empty canister for new documents
+      setCanisters([{
+        id: `canister-${Date.now()}`,
+        content: '',
+        isEditing: false
+      }])
     }
-
-    // Convert content to canisters (split by lines)
-    const lines = initialContent.split('\n')
-    const initialCanisters = lines.map((line, index) => ({
-      id: `canister-${index}`,
-      content: line,
-      isEditing: false
-    }))
-
-    setCanisters(initialCanisters)
   }, [])
 
   // Auto-save to localStorage when canisters change
@@ -426,19 +789,29 @@ Click any line to edit that specific content!`
   // Handle mouse selection for multi-select - document level
   const handleDocumentMouseDown = useCallback((e) => {
     // Allow drag selection to start from anywhere in the document
-    if (!e.shiftKey && !e.metaKey && !e.ctrlKey && !isMultiLineEditing) {
+    if (!e.shiftKey && !e.metaKey && !e.ctrlKey && !isMultiLineEditing && !draggedCanisterId) {
       // Don't start selection if clicking on buttons, inputs, or other interactive elements
+      // Also don't start selection if clicking on a draggable element or if we're already dragging
       if (!e.target.closest('button') &&
         !e.target.closest('input') &&
         !e.target.closest('textarea') &&
-        !e.target.closest('.multi-line-editor')) {
+        !e.target.closest('.multi-line-editor') &&
+        !e.target.closest('[draggable="true"]') &&
+        !e.target.closest('.canister')) {  // Don't start selection if clicking on a canister
+
+        // Don't clear editing if there's only one canister and it's currently being edited
+        // This allows continuous typing in the last/only container
+        const isOnlyCanisterEditing = canisters.length === 1 && editingCanisterIds.size === 1
+
         setIsSelecting(true)
         setDragSelectionIds(new Set())
-        setEditingCanisterIds(new Set()) // Clear current editing
+        if (!isOnlyCanisterEditing) {
+          setEditingCanisterIds(new Set()) // Clear current editing
+        }
         setSelectedCanisterIds(new Set()) // Clear current selection
       }
     }
-  }, [isMultiLineEditing])
+  }, [isMultiLineEditing, draggedCanisterId, canisters.length, editingCanisterIds.size])
 
   // Handle mouse selection for multi-select - container level (keep for backwards compatibility)
   const handleContainerMouseDown = (e) => {
@@ -448,6 +821,17 @@ Click any line to edit that specific content!`
 
   // Handle mouse selection when clicking on canisters
   const handleCanisterMouseDown = (canisterId, e) => {
+    // Don't handle selection if this is a potential drag operation
+    // Check if target is draggable and no modifier keys are pressed
+    if (e.target.closest('[draggable="true"]') && !e.shiftKey && !e.metaKey && !e.ctrlKey && !isMultiLineEditing) {
+      // This is likely a drag operation, don't interfere with selection
+      e.stopPropagation() // Prevent document handler from starting selection
+      // Clear any existing selection states to avoid conflicts
+      setIsSelecting(false)
+      setDragSelectionIds(new Set())
+      return
+    }
+
     if (e.shiftKey || e.metaKey || e.ctrlKey) {
       e.preventDefault()
       e.stopPropagation()
@@ -675,20 +1059,24 @@ Click any line to edit that specific content!`
         return
       }
 
-      // Cmd+A to select all canisters
+      // Cmd+A to select all canisters (only if no editing is happening)
       if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
-        e.preventDefault()
-        const allCanisterIds = new Set(canisters.map(c => c.id))
-        setSelectedCanisterIds(allCanisterIds)
-        setEditingCanisterIds(new Set()) // Clear editing when selecting all
+        // If no canisters are currently being edited, handle global select all
+        if (editingCanisterIds.size === 0) {
+          e.preventDefault()
+          const allCanisterIds = new Set(canisters.map(c => c.id))
+          setSelectedCanisterIds(allCanisterIds)
+          setEditingCanisterIds(new Set()) // Clear editing when selecting all
 
-        // Automatically open multi-line editor for select all
-        if (allCanisterIds.size > 1) {
-          setTimeout(() => {
-            setIsMultiLineEditing(true)
-          }, 50)
+          // Automatically open multi-line editor for select all
+          if (allCanisterIds.size > 1) {
+            setTimeout(() => {
+              setIsMultiLineEditing(true)
+            }, 50)
+          }
+          return
         }
-        return
+        // If editing is happening, let the individual canister handle it first
       }
 
       // Cmd+S to save as markdown file (works globally)
@@ -724,9 +1112,27 @@ Click any line to edit that specific content!`
       }
     }
 
+    // Handle custom event for selecting all containers from within an input
+    const handleSelectAllContainers = () => {
+      const allCanisterIds = new Set(canisters.map(c => c.id))
+      setSelectedCanisterIds(allCanisterIds)
+      setEditingCanisterIds(new Set()) // Clear editing when selecting all
+
+      // Automatically open multi-line editor for select all
+      if (allCanisterIds.size > 1) {
+        setTimeout(() => {
+          setIsMultiLineEditing(true)
+        }, 50)
+      }
+    }
+
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [canisters, isMultiLineEditing, selectedCanisterIds])
+    window.addEventListener('selectAllContainers', handleSelectAllContainers)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('selectAllContainers', handleSelectAllContainers)
+    }
+  }, [canisters, isMultiLineEditing, selectedCanisterIds, editingCanisterIds])
 
   // Handle multi-line editing
   const handleMultiLineSave = (selectedCanisters, newLines) => {
@@ -764,6 +1170,31 @@ Click any line to edit that specific content!`
     setIsMultiLineEditing(false)
   }
 
+  const handleMultiLineDelete = (selectedCanisters) => {
+    addToUndoStack(canisters)
+
+    // Remove the selected canisters
+    const selectedIds = new Set(selectedCanisters.map(c => c.id))
+    const updatedCanisters = canisters.filter(c => !selectedIds.has(c.id))
+
+    // If all canisters would be deleted, create one empty canister
+    if (updatedCanisters.length === 0) {
+      const emptyCanister = {
+        id: `canister-${Date.now()}`,
+        content: '',
+        isEditing: false
+      }
+      setCanisters([emptyCanister])
+    } else {
+      setCanisters(updatedCanisters)
+    }
+
+    setIsMultiLineEditing(false)
+    setSelectedCanisterIds(new Set())
+    setEditingCanisterIds(new Set())
+    setHasUnsavedChanges(true)
+  }
+
   // Handle double-click on canisters
   const handleCanisterDoubleClick = (canisterId) => {
     if (selectedCanisterIds.size > 1 && selectedCanisterIds.has(canisterId)) {
@@ -773,6 +1204,115 @@ Click any line to edit that specific content!`
       // Normal single edit
       editCanister(canisterId)
     }
+  }
+
+  // Handle drag and drop for reordering canisters
+  const handleDragStart = (e, canisterId) => {
+    setDraggedCanisterId(canisterId)
+
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/html', e.target.outerHTML)
+    e.target.style.opacity = '0.6'
+
+    // Clear any selection states when starting a drag to prevent interference
+    setIsSelecting(false)
+    setDragSelectionIds(new Set())
+    // Don't clear selected containers if we're dragging a selected item
+    if (!selectedCanisterIds.has(canisterId)) {
+      setSelectedCanisterIds(new Set())
+    }
+    setEditingCanisterIds(new Set())
+
+    // Prevent any other event handlers from interfering
+    e.stopPropagation()
+  }
+
+  const handleDragEnd = (e) => {
+    e.target.style.opacity = '1'
+    setDraggedCanisterId(null)
+    setDragOverCanisterId(null)
+    setDragOverPosition(null)
+  }
+
+  const handleDragOver = (e, canisterId) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+
+    if (draggedCanisterId && draggedCanisterId !== canisterId) {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const midpoint = rect.top + rect.height / 2
+      const position = e.clientY < midpoint ? 'top' : 'bottom'
+
+      // Only update if position has actually changed to reduce unnecessary re-renders
+      if (dragOverCanisterId !== canisterId || dragOverPosition !== position) {
+        setDragOverCanisterId(canisterId)
+        setDragOverPosition(position)
+      }
+    }
+  }
+
+  const handleDragEnter = (e, canisterId) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (draggedCanisterId && draggedCanisterId !== canisterId) {
+      setDragOverCanisterId(canisterId)
+    }
+  }
+
+  const handleDragLeave = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only clear if we're actually leaving the element and not entering a child
+    const rect = e.currentTarget.getBoundingClientRect()
+    const isLeavingElement = (
+      e.clientX < rect.left ||
+      e.clientX > rect.right ||
+      e.clientY < rect.top ||
+      e.clientY > rect.bottom
+    )
+
+    if (isLeavingElement && !e.relatedTarget?.closest(`[data-canister-id="${dragOverCanisterId}"]`)) {
+      setDragOverCanisterId(null)
+      setDragOverPosition(null)
+    }
+  }
+
+  const handleDrop = (e, canisterId) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    if (draggedCanisterId && draggedCanisterId !== canisterId) {
+      addToUndoStack(canisters)
+
+      const draggedIndex = canisters.findIndex(c => c.id === draggedCanisterId)
+      const targetIndex = canisters.findIndex(c => c.id === canisterId)
+
+      if (draggedIndex !== -1 && targetIndex !== -1) {
+        const newCanisters = [...canisters]
+        const [draggedCanister] = newCanisters.splice(draggedIndex, 1)
+
+        // Determine insertion position
+        let insertIndex = targetIndex
+        if (dragOverPosition === 'bottom') {
+          insertIndex = targetIndex + 1
+        }
+
+        // Adjust if dragged item was before target
+        if (draggedIndex < targetIndex && dragOverPosition === 'bottom') {
+          insertIndex = targetIndex
+        } else if (draggedIndex < targetIndex && dragOverPosition === 'top') {
+          insertIndex = targetIndex - 1
+        }
+
+        newCanisters.splice(insertIndex, 0, draggedCanister)
+        setCanisters(newCanisters)
+        setHasUnsavedChanges(true)
+      }
+    }
+
+    setDragOverCanisterId(null)
+    setDragOverPosition(null)
   }
 
   // Handle file operations
@@ -848,16 +1388,131 @@ Click any line to edit that specific content!`
     <div className="app">
       {/* Top bar */}
       <div className="top-bar">
-        <button onClick={handleOpenFile} title="Open Markdown File">
-          📂 Open
-        </button>
-        <button onClick={handleNewFile} title="New Markdown File">
-          🆕 New
-        </button>
-        <button onClick={handleSaveAsMarkdown} title="Save as Markdown File (Cmd+S)">
-          💾 Save
-        </button>
+        <div className="top-bar-left">
+          <button onClick={handleOpenFile} title="Open Markdown File">
+            📂 Open
+          </button>
+          <button onClick={handleNewFile} title="New Markdown File">
+            🆕 New
+          </button>
+          <button onClick={handleSaveAsMarkdown} title="Save as Markdown File (Cmd+S)">
+            💾 Save
+          </button>
+        </div>
+
+        <div className="top-bar-right">
+          <button
+            onClick={() => setShowTooltips(!showTooltips)}
+            title="Show Markdown Help"
+            className={showTooltips ? 'active' : ''}
+          >
+            ❓ Help
+          </button>
+        </div>
       </div>
+
+      {/* Tooltips Panel */}
+      {showTooltips && (
+        <div className="tooltips-panel">
+          <div className="tooltips-header">
+            <h3>📝 Markdown Syntax Guide</h3>
+            <button onClick={() => setShowTooltips(false)} className="close-btn">✕</button>
+          </div>
+          <div className="tooltips-content">
+            <div className="tooltip-section">
+              <h4>🎯 Basic Formatting Hotkeys</h4>
+              <div className="tooltip-item">
+                <kbd>Cmd+B</kbd> → <code>**bold text**</code> → <strong>bold text</strong>
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+I</kbd> → <code>*italic text*</code> → <em>italic text</em>
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+U</kbd> → <code>&lt;u&gt;underlined&lt;/u&gt;</code> → <u>underlined</u>
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+D</kbd> → <code>~~strikethrough~~</code> → <del>strikethrough</del>
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+E</kbd> → <code>`inline code`</code> → <code>inline code</code>
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+H</kbd> → <code>==highlighted==</code> → <mark>highlighted</mark>
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+K</kbd> → <code>[link text](url)</code> → Link formatting
+              </div>
+            </div>
+
+            <div className="tooltip-section">
+              <h4>📋 Headers & Structure</h4>
+              <div className="tooltip-item">
+                <kbd>Cmd+1</kbd> → <code># Heading 1</code> → Large header
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+2</kbd> → <code>## Heading 2</code> → Medium header
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+3-6</kbd> → <code>### Smaller headers</code>
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+L</kbd> → <code>- List item</code> → • Bullet point
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+Q</kbd> → <code>&gt; Blockquote</code> → Quote block
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+R</kbd> → <code>---</code> → Horizontal rule
+              </div>
+            </div>
+
+            <div className="tooltip-section">
+              <h4>🎨 HTML Formatting</h4>
+              <div className="tooltip-item">
+                <kbd>Cmd+M</kbd> → <code>&lt;div align="center"&gt;text&lt;/div&gt;</code> → Centered text
+              </div>
+            </div>
+
+            <div className="tooltip-section">
+              <h4>⚡ Quick Actions</h4>
+              <div className="tooltip-item">
+                <kbd>Enter</kbd> → Create new line below
+              </div>
+              <div className="tooltip-item">
+                <kbd>↑↓←→</kbd> → Navigate between lines
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+A</kbd> → Select all lines
+              </div>
+              <div className="tooltip-item">
+                <kbd>Cmd+Click</kbd> → Multi-select lines
+              </div>
+              <div className="tooltip-item">
+                <strong>Drag containers</strong> → Reorder lines
+              </div>
+              <div className="tooltip-item">
+                <kbd>Tab</kbd> → Add 4 spaces (indent)
+              </div>
+              <div className="tooltip-item">
+                <kbd>Esc</kbd> → Cancel editing
+              </div>
+            </div>
+
+            <div className="tooltip-section">
+              <h4>💡 Pro Tips</h4>
+              <div className="tooltip-item">
+                • Select text before using hotkeys to wrap existing text
+              </div>
+              <div className="tooltip-item">
+                • Use hotkeys without selection to insert formatting at cursor
+              </div>
+              <div className="tooltip-item">
+                • All standard markdown syntax works manually too
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Canisters */}
       <div
@@ -873,6 +1528,8 @@ Click any line to edit that specific content!`
             isSelected={selectedCanisterIds.has(canister.id)}
             isDragSelecting={dragSelectionIds.has(canister.id)}
             isSelecting={isSelecting}
+            isDragging={draggedCanisterId === canister.id}
+            dragOverPosition={dragOverCanisterId === canister.id ? dragOverPosition : null}
             onEdit={editCanister}
             onSave={saveCanister}
             onCreateNew={createNewCanister}
@@ -883,6 +1540,12 @@ Click any line to edit that specific content!`
             onMouseDown={handleCanisterMouseDown}
             onMouseEnter={handleCanisterMouseEnter}
             onDoubleClick={handleCanisterDoubleClick}
+            onDragStart={(e) => handleDragStart(e, canister.id)}
+            onDragEnd={handleDragEnd}
+            onDragOver={(e) => handleDragOver(e, canister.id)}
+            onDragEnter={(e) => handleDragEnter(e, canister.id)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, canister.id)}
             totalCanisters={canisters.length}
           />
         ))}
@@ -894,6 +1557,7 @@ Click any line to edit that specific content!`
             selectedIds={selectedCanisterIds}
             onSave={handleMultiLineSave}
             onCancel={handleMultiLineCancel}
+            onDelete={handleMultiLineDelete}
           />
         )}
       </div>
